@@ -1,3 +1,2 @@
-BIRDEYE_API_KEY=xxxx
-TELEGRAM_TOKEN=xxxx
-TELEGRAM_CHAT_ID=xxxx
+requests
+python-dotenv
