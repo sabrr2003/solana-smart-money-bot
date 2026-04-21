@@ -1,134 +1,93 @@
 import requests
 import time
-from config import *
+from config import BIRDEYE_API_KEY, TELEGRAM_TOKEN, CHAT_ID
 
-headers = {"X-API-KEY": API_KEY}
+# ====== FILTERS ======
+MIN_LIQ = 10000
+MAX_LIQ = 999999999
+MIN_VOLUME = 1000
 
-seen = set()
-wallets = {}
-smart_wallets = set()
+# ====== TELEGRAM ======
+def send_telegram(token, liquidity, volume, price):
+    message = f"""
+🚨 *SMART MONEY ALERT* 🚨
 
-# =====================
-# Telegram
-# =====================
-def send(msg):
+🪙 *Token:* `{token}`
+
+💧 *Liquidity:* ${liquidity:,.0f}
+📊 *Volume 24h:* ${volume:,.0f}
+💰 *Price:* ${price}
+
+🔥 *Status:* Activity Detected
+
+🔗 [View Chart](https://dexscreener.com/solana/{token})
+
+🧠 *Source:* Fast Scanner
+    """
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=3)
+        requests.post(url, json=payload)
     except:
-        print(msg)
+        print("Telegram Error")
 
-# =====================
-# Trades
-# =====================
-def get_trades():
+# ====== FETCH TOKENS ======
+def get_tokens():
+    url = "https://public-api.birdeye.so/defi/tokenlist"
+
+    headers = {
+        "X-API-KEY": BIRDEYE_API_KEY
+    }
+
     try:
-        url = "https://public-api.birdeye.so/public/transactions"
-        r = requests.get(url, headers=headers, timeout=3)
-        return r.json().get("data", [])
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        return data.get("data", [])
     except:
+        print("API Error")
         return []
 
-# =====================
-# Filters
-# =====================
-def is_meme(name):
-    name = name.lower()
-    return any(x in name for x in ["dog","inu","pepe","cat","shib","meme"])
-
-def is_scam(name):
-    name = name.lower()
-    return any(x in name for x in ["test","rug","fake","scam"])
-
-# =====================
-# Smart scoring
-# =====================
-def update_wallet(wallet, amount):
-    if wallet not in wallets:
-        wallets[wallet] = {"count":0,"volume":0,"score":0}
-
-    w = wallets[wallet]
-
-    w["count"] += 1
-    w["volume"] += amount
-    w["score"] = w["count"]*2 + w["volume"]/5000
-
-    if w["score"] > 20:
-        smart_wallets.add(wallet)
-
-# =====================
-# Main loop
-# =====================
-def run():
+# ====== MAIN LOOP ======
+def main():
     print("🚀 FAST NEWS BOT STARTED")
 
+    seen = set()
+
     while True:
-        trades = get_trades()
+        tokens = get_tokens()
 
-        for t in trades:
+        for token in tokens:
             try:
-                wallet = t.get("owner")
-                token = t.get("address")
-                amount = t.get("valueUsd", 0)
-                symbol = t.get("symbol","UNK")
+                address = token.get("address")
+                liquidity = token.get("liquidity", 0)
+                volume = token.get("volume24h", 0)
+                price = token.get("price", 0)
 
-                if not wallet or not token:
-                    continue
+                # FILTER
+                if (
+                    liquidity > MIN_LIQ and
+                    liquidity < MAX_LIQ and
+                    volume > MIN_VOLUME and
+                    address not in seen
+                ):
+                    print("FOUND:", address)
 
-                if amount < MIN_BUY or amount > MAX_BUY:
-                    continue
+                    send_telegram(address, liquidity, volume, price)
 
-                if not is_meme(symbol):
-                    continue
-
-                if is_scam(symbol):
-                    continue
-
-                key = f"{wallet}_{token}"
-                if key in seen:
-                    continue
-
-                seen.add(key)
-
-                update_wallet(wallet, amount)
-
-                # 🔥 SMART MONEY
-                if wallet in smart_wallets:
-                    send(f"""
-🧠 SMART MONEY
-
-💰 ${amount:,.0f}
-🪙 {symbol}
-
-📌 {token}
-""")
-
-                # 🐋 WHALE
-                elif amount > 20000:
-                    send(f"""
-🐋 WHALE BUY
-
-💰 ${amount:,.0f}
-🪙 {symbol}
-
-📌 {token}
-""")
-
-                # 🚀 DEAD PUMP
-                elif amount > 80000:
-                    send(f"""
-🚀 DEAD COIN REVIVE
-
-💰 ${amount:,.0f}
-🪙 {symbol}
-
-📌 {token}
-""")
+                    seen.add(address)
 
             except:
                 continue
 
-        time.sleep(1)  # ⚡ سرعة عالية
+        time.sleep(10)
 
+# ====== RUN ======
 if __name__ == "__main__":
-    run()
+    main()
