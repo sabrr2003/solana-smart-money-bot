@@ -1,0 +1,9 @@
+import os
+
+API_KEY = os.getenv("BIRDEYE_API_KEY")
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+MIN_BUY = 1000
+MAX_BUY = 100000
