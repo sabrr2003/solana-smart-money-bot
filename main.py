@@ -1,90 +1,97 @@
 import os
 import random
 import time
-import asyncio
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from tiktok_uploader.upload import upload_video
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-# --- [ بياناتك الخاصة ] ---
+# --- [ إعدادات البيانات الخاصة بكِ ] ---
 TOKEN = "8777082488:AAFx4fw2Q0-2PvWU2ZORFiKJaDYXPpXXF-A"
 MY_ID = 7992451925 
 
-# --- [ دالة الترويج التلقائي - الصعود للترند ] ---
-def boost_video(video_url):
-    print(f"🚀 بدأت حملة الصعود لـ: {video_url}")
+# --- [ نظام الترويج للصعود ] ---
+def boost_logic(video_url):
     options = webdriver.ChromeOptions()
     options.add_argument("--incognito")
-    options.add_argument("--headless") # يعمل في الخلفية
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     
-    # محاكاة تفاعلات من هويات مختلفة
-    for i in range(15):
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    # محاكاة 20 تفاعل لضمان الصعود
+    for i in range(20):
         try:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
             driver.get(video_url)
-            # محاكاة وقت مشاهدة حقيقي (بين 25 و 50 ثانية)
-            wait_time = random.randint(25, 50)
-            time.sleep(wait_time)
-            print(f"✅ تفاعل رقم {i+1} اكتمل بنجاح.")
-        finally:
+            time.sleep(random.randint(30, 60)) # مشاهدة كاملة
             driver.quit()
-        time.sleep(random.randint(5, 10)) # فاصل زمني بسيط
+        except: pass
+        time.sleep(5)
 
-# --- [ دالة استقبال الميديا من تليجرام ونشرها ] ---
-async def handle_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # حماية: البوت مخصص لكِ فقط
-    if update.message.from_user.id != MY_ID:
+# --- [ واجهة لوحة التحكم ] ---
+async def start_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != MY_ID: return
+    
+    keyboard = [
+        [InlineKeyboardButton("📤 نشر فيديو جديد", callback_data='upload')],
+        [InlineKeyboardButton("🔥 ترويج رابط موجود", callback_data='promote')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("👋 أهلاً بكِ في لوحة تحكم التيك توك:\nاخري ماذا تريدين أن تفعلي الآن:", reply_markup=reply_markup)
+
+# --- [ معالجة ضغطات الأزرار ] ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'upload':
+        await query.edit_message_text("حسناً، أرسلي الفيديو الآن وسأقوم بنشره وترويجه تلقائياً.")
+    elif query.data == 'promote':
+        context.user_data['waiting_for_link'] = True
+        await query.edit_message_text("أرسلي رابط الفيديو (Link) الذي تريدين ترويجه الآن:")
+
+# --- [ معالجة الرسائل (فيديو أو رابط) ] ---
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != MY_ID: return
+
+    # حالة إرسال رابط للترويج
+    if context.user_data.get('waiting_for_link'):
+        url = update.message.text
+        if "tiktok.com" in url:
+            await update.message.reply_text("✅ تم استلام الرابط. بدأت عملية الرشق والترويج الآن...")
+            boost_logic(url) # تشغيل الترويج
+            context.user_data['waiting_for_link'] = False
+        else:
+            await update.message.reply_text("❌ عذراً، هذا ليس رابط تيك توك صحيح.")
         return
 
-    # التحقق هل المرسل فيديو أم صورة
+    # حالة إرسال فيديو للنشر
     if update.message.video:
-        media_file = await update.message.video.get_file()
-        ext = ".mp4"
-    elif update.message.photo:
-        # ملاحظة: تيك توك يفضل الفيديوهات، سيتم التعامل مع الصورة كملف
-        media_file = await update.message.photo[-1].get_file()
-        ext = ".jpg"
-    else:
-        await update.message.reply_text("يرجى إرسال فيديو أو صورة فقط.")
-        return
-
-    await update.message.reply_text("📥 جاري استلام الملف ومعالجته للنشر الفوري...")
-    
-    file_name = f"media_{int(time.time())}{ext}"
-    await media_file.download_to_drive(file_name)
-    
-    try:
-        # النشر على تيك توك (يتطلب وجود ملف cookies.txt)
-        await update.message.reply_text("📤 جاري الرفع على تيك توك الآن...")
+        msg = await update.message.reply_text("📥 جاري التحميل والنشر...")
+        video_file = await update.message.video.get_file()
+        path = f"vid_{int(time.time())}.mp4"
+        await video_file.download_to_drive(path)
         
-        upload_video(file_name, 
-                     description="تم النشر والترويج تلقائياً ⚡ #ترند #عراق #AI", 
-                     cookies='cookies.txt')
-        
-        await update.message.reply_text("✅ تم النشر! البوت بدأ الآن بعملية 'الترويج الحقيقي' لرفع المشاهدات.")
-        
-        # تشغيل الترويج في الخلفية لكي لا يتوقف البوت
-        # boost_video("رابط_الفيديو_هنا") 
+        try:
+            upload_video(path, description="Boosted by AI Bot 🚀 #fyp", cookies='cookies.txt')
+            await msg.edit_text("✅ تم النشر بنجاح!")
+        except Exception as e:
+            await msg.edit_text(f"❌ فشل النشر: {str(e)}")
+        if os.path.exists(path): os.remove(path)
 
-    except Exception as e:
-        await update.message.reply_text(f"❌ خطأ في النشر: {str(e)}\nتأكدي من وضع ملف cookies.txt بجانب الكود.")
-    
-    # حذف الملف المحلي بعد الرفع
-    if os.path.exists(file_name):
-        os.remove(file_name)
-
-# --- [ تشغيل البوت ] ---
+# --- [ التشغيل ] ---
 def main():
-    print("🤖 بوت الترويج والترند يعمل الآن...")
-    application = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).build()
     
-    # معالجة الصور والفيديوهات
-    application.add_handler(MessageHandler(filters.VIDEO | filters.PHOTO, handle_upload))
+    # أوامر البوت
+    app.add_handler(MessageHandler(filters.COMMAND, start_dashboard))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.VIDEO | filters.TEXT, message_handler))
     
-    application.run_polling()
+    print("🚀 اللوحة تعمل الآن.. أرسلي /start في تليجرام")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
