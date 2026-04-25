@@ -1,2 +1,5 @@
+python-telegram-bot
+selenium
+tiktok-uploader
 requests
-python-dotenv
+webdriver-manager
