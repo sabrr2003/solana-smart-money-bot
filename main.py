@@ -1,93 +1,90 @@
-import requests
+import os
+import random
 import time
-from config import BIRDEYE_API_KEY, TELEGRAM_TOKEN, CHAT_ID
+import asyncio
+from telegram import Update
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from tiktok_uploader.upload import upload_video
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
-# ====== FILTERS ======
-MIN_LIQ = 10000
-MAX_LIQ = 999999999
-MIN_VOLUME = 1000
+# --- [ بياناتك الخاصة ] ---
+TOKEN = "8777082488:AAFx4fw2Q0-2PvWU2ZORFiKJaDYXPpXXF-A"
+MY_ID = 7992451925 
 
-# ====== TELEGRAM ======
-def send_telegram(token, liquidity, volume, price):
-    message = f"""
-🚨 *SMART MONEY ALERT* 🚨
+# --- [ دالة الترويج التلقائي - الصعود للترند ] ---
+def boost_video(video_url):
+    print(f"🚀 بدأت حملة الصعود لـ: {video_url}")
+    options = webdriver.ChromeOptions()
+    options.add_argument("--incognito")
+    options.add_argument("--headless") # يعمل في الخلفية
+    
+    # محاكاة تفاعلات من هويات مختلفة
+    for i in range(15):
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        try:
+            driver.get(video_url)
+            # محاكاة وقت مشاهدة حقيقي (بين 25 و 50 ثانية)
+            wait_time = random.randint(25, 50)
+            time.sleep(wait_time)
+            print(f"✅ تفاعل رقم {i+1} اكتمل بنجاح.")
+        finally:
+            driver.quit()
+        time.sleep(random.randint(5, 10)) # فاصل زمني بسيط
 
-🪙 *Token:* `{token}`
+# --- [ دالة استقبال الميديا من تليجرام ونشرها ] ---
+async def handle_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # حماية: البوت مخصص لكِ فقط
+    if update.message.from_user.id != MY_ID:
+        return
 
-💧 *Liquidity:* ${liquidity:,.0f}
-📊 *Volume 24h:* ${volume:,.0f}
-💰 *Price:* ${price}
+    # التحقق هل المرسل فيديو أم صورة
+    if update.message.video:
+        media_file = await update.message.video.get_file()
+        ext = ".mp4"
+    elif update.message.photo:
+        # ملاحظة: تيك توك يفضل الفيديوهات، سيتم التعامل مع الصورة كملف
+        media_file = await update.message.photo[-1].get_file()
+        ext = ".jpg"
+    else:
+        await update.message.reply_text("يرجى إرسال فيديو أو صورة فقط.")
+        return
 
-🔥 *Status:* Activity Detected
-
-🔗 [View Chart](https://dexscreener.com/solana/{token})
-
-🧠 *Source:* Fast Scanner
-    """
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-
+    await update.message.reply_text("📥 جاري استلام الملف ومعالجته للنشر الفوري...")
+    
+    file_name = f"media_{int(time.time())}{ext}"
+    await media_file.download_to_drive(file_name)
+    
     try:
-        requests.post(url, json=payload)
-    except:
-        print("Telegram Error")
+        # النشر على تيك توك (يتطلب وجود ملف cookies.txt)
+        await update.message.reply_text("📤 جاري الرفع على تيك توك الآن...")
+        
+        upload_video(file_name, 
+                     description="تم النشر والترويج تلقائياً ⚡ #ترند #عراق #AI", 
+                     cookies='cookies.txt')
+        
+        await update.message.reply_text("✅ تم النشر! البوت بدأ الآن بعملية 'الترويج الحقيقي' لرفع المشاهدات.")
+        
+        # تشغيل الترويج في الخلفية لكي لا يتوقف البوت
+        # boost_video("رابط_الفيديو_هنا") 
 
-# ====== FETCH TOKENS ======
-def get_tokens():
-    url = "https://public-api.birdeye.so/defi/tokenlist"
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطأ في النشر: {str(e)}\nتأكدي من وضع ملف cookies.txt بجانب الكود.")
+    
+    # حذف الملف المحلي بعد الرفع
+    if os.path.exists(file_name):
+        os.remove(file_name)
 
-    headers = {
-        "X-API-KEY": BIRDEYE_API_KEY
-    }
-
-    try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        return data.get("data", [])
-    except:
-        print("API Error")
-        return []
-
-# ====== MAIN LOOP ======
+# --- [ تشغيل البوت ] ---
 def main():
-    print("🚀 FAST NEWS BOT STARTED")
+    print("🤖 بوت الترويج والترند يعمل الآن...")
+    application = Application.builder().token(TOKEN).build()
+    
+    # معالجة الصور والفيديوهات
+    application.add_handler(MessageHandler(filters.VIDEO | filters.PHOTO, handle_upload))
+    
+    application.run_polling()
 
-    seen = set()
-
-    while True:
-        tokens = get_tokens()
-
-        for token in tokens:
-            try:
-                address = token.get("address")
-                liquidity = token.get("liquidity", 0)
-                volume = token.get("volume24h", 0)
-                price = token.get("price", 0)
-
-                # FILTER
-                if (
-                    liquidity > MIN_LIQ and
-                    liquidity < MAX_LIQ and
-                    volume > MIN_VOLUME and
-                    address not in seen
-                ):
-                    print("FOUND:", address)
-
-                    send_telegram(address, liquidity, volume, price)
-
-                    seen.add(address)
-
-            except:
-                continue
-
-        time.sleep(10)
-
-# ====== RUN ======
 if __name__ == "__main__":
     main()
