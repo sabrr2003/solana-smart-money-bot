@@ -1,3 +1,4 @@
 python-telegram-bot
-tiktok-uploader
 requests
+tiktok-uploader
+urllib3
