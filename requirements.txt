@@ -1,6 +1,3 @@
 python-telegram-bot
-selenium
-selenium-stealth
 tiktok-uploader
-webdriver-manager
 requests
